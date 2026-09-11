@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Consultório Dr. Júlia — Agenda &amp; Repasses</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:            #f6f2ea;
+    --nude:          #ece0cd;
+    --nude-soft:     #f4ebdd;
+    --green-deep:    #3f5646;
+    --green-mid:     #7c9a80;
+    --green-pale:    #d9e3d3;
+    --ink:           #2c332b;
+    --ink-muted:     #6f7869;
+    --line:          #ddd0b9;
+    --white:         #fffdf9;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Manrope', sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+
+  ::selection{background:var(--green-pale); color:var(--green-deep);}
+
+  /* subtle paper texture via layered radial gradients */
+  .texture{
+    position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.5;
+    background:
+      radial-gradient(circle at 15% 8%, rgba(124,154,128,.10), transparent 40%),
+      radial-gradient(circle at 85% 92%, rgba(216,180,140,.14), transparent 45%);
+  }
+
+  .shell{ position:relative; z-index:1; max-width:920px; margin:0 auto; padding:40px 24px 90px; }
+
+  /* ---------- header ---------- */
+  header.top{
+    display:flex; justify-content:space-between; align-items:flex-end;
+    gap:20px; margin-bottom:34px; flex-wrap:wrap;
+  }
+  .brand{ display:flex; align-items:center; gap:14px; }
+  .brand svg{ flex-shrink:0; }
+  .brand-text .kicker{
+    font-size:12.5px; letter-spacing:.02em; color:var(--ink-muted); margin:0 0 2px;
+  }
+  .brand-text h1{
+    font-family:'Fraunces', serif; font-weight:500; font-size:26px; margin:0;
+    color:var(--green-deep); letter-spacing:-.01em;
+  }
+
+  /* ---------- tabs ---------- */
+  nav.tabs{ display:flex; gap:8px; flex-wrap:wrap; }
+  .tab{
+    font-family:'Manrope', sans-serif; font-size:14px; font-weight:600;
+    padding:9px 18px; border-radius:100px; cursor:pointer; border:1px solid transparent;
+    background:transparent; color:var(--ink-muted); transition:background .15s ease, color .15s ease;
+    white-space:nowrap;
+  }
+  .tab.active{ background:var(--green-deep); color:var(--white); }
+  .tab.disabled{
+    color:#b3a68f; border:1px dashed var(--line); cursor:default;
+  }
+
+  /* ---------- panels ---------- */
+  .panel{ display:none; }
+  .panel.active{ display:block; animation:rise .35s ease; }
+  @keyframes rise{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+
+  .empty-state{
+    background:var(--nude-soft); border:1px dashed var(--line); border-radius:18px;
+    padding:56px 32px; text-align:center; color:var(--ink-muted);
+  }
+  .empty-state .icon{ margin-bottom:14px; }
+  .empty-state h3{
+    font-family:'Fraunces', serif; font-weight:500; color:var(--green-deep);
+    font-size:19px; margin:0 0 6px;
+  }
+  .empty-state p{ margin:0; font-size:14.5px; line-height:1.5; max-width:320px; margin:0 auto; }
+
+  /* ---------- hero stats ---------- */
+  .period-label{
+    font-size:13px; font-weight:700; letter-spacing:.03em; color:var(--green-mid);
+    margin:0 0 6px;
+  }
+  .hero{
+    display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:26px;
+  }
+  .hero .big{
+    font-family:'Fraunces', serif; font-size:52px; font-weight:500; color:var(--green-deep);
+    letter-spacing:-.02em; line-height:1;
+  }
+  .hero .big-label{ font-size:15px; color:var(--ink-muted); }
+
+  .stat-row{
+    display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr));
+    gap:12px; margin-bottom:36px;
+  }
+  .stat-card{
+    background:var(--white); border:1px solid var(--line); border-radius:16px;
+    padding:16px 18px;
+  }
+  .stat-card .n{
+    font-family:'Fraunces', serif; font-size:24px; font-weight:500; color:var(--green-deep);
+  }
+  .stat-card .l{ font-size:12.5px; color:var(--ink-muted); margin-top:2px; }
+
+  /* ---------- section titles ---------- */
+  .section-title{
+    font-family:'Fraunces', serif; font-size:20px; font-weight:500; color:var(--green-deep);
+    margin:0 0 4px;
+  }
+  .section-sub{ font-size:13.5px; color:var(--ink-muted); margin:0 0 20px; }
+
+  /* ---------- filters ---------- */
+  .filters{
+    display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+    margin-bottom:22px; padding:16px; background:var(--white);
+    border:1px solid var(--line); border-radius:16px;
+  }
+  .filters .search{
+    position:relative; flex:1 1 220px; min-width:180px;
+  }
+  .filters .search svg{
+    position:absolute; left:12px; top:50%; transform:translateY(-50%); pointer-events:none;
+  }
+  .filters .search input{
+    width:100%; font-family:'Manrope', sans-serif; font-size:14px; color:var(--ink);
+    background:var(--nude-soft); border:1px solid var(--line); border-radius:100px;
+    padding:9px 14px 9px 36px; outline:none; transition:border-color .15s ease;
+  }
+  .filters .search input:focus{ border-color:var(--green-mid); }
+  .filters .search input::placeholder{ color:#9a917d; }
+
+  .chip-row{ display:flex; gap:6px; flex-wrap:wrap; }
+  .chip{
+    font-family:'Manrope', sans-serif; font-size:12.5px; font-weight:700;
+    padding:7px 13px; border-radius:100px; cursor:pointer; white-space:nowrap;
+    background:var(--nude-soft); border:1px solid var(--line); color:var(--ink-muted);
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+    text-transform:capitalize;
+  }
+  .chip:hover{ border-color:var(--green-mid); }
+  .chip.active{ background:var(--green-deep); border-color:var(--green-deep); color:var(--white); }
+
+  .filter-status{
+    font-size:12.5px; color:var(--ink-muted); margin:-10px 0 18px; min-height:16px;
+  }
+  .filter-status b{ color:var(--green-deep); }
+
+  .no-results{
+    text-align:center; padding:40px 20px; color:var(--ink-muted); font-size:14px;
+    background:var(--nude-soft); border:1px dashed var(--line); border-radius:16px; display:none;
+  }
+
+  /* ---------- agenda / ledger ---------- */
+  .agenda{ display:flex; flex-direction:column; }
+  .day-group{ position:relative; padding-left:72px; margin-bottom:6px; }
+  .day-group::before{
+    content:''; position:absolute; left:27px; top:4px; bottom:-6px; width:1px;
+    background:var(--line);
+  }
+  .day-group:last-child::before{ display:none; }
+  .day-badge{
+    position:absolute; left:0; top:0; width:56px; text-align:center;
+  }
+  .day-badge .num{
+    font-family:'Fraunces', serif; font-size:20px; color:var(--green-deep); font-weight:500;
+    display:block; line-height:1.1;
+  }
+  .day-badge .mon{
+    font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-muted);
+  }
+  .day-header{
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding:2px 0 10px; font-size:13px; color:var(--ink-muted);
+  }
+  .day-header .wd{ text-transform:capitalize; font-weight:700; color:var(--green-mid); }
+  .day-header .dtot{ font-weight:700; color:var(--green-deep); }
+
+  .visit{
+    background:var(--white); border:1px solid var(--line); border-radius:14px;
+    padding:13px 16px; margin-bottom:8px; display:flex; justify-content:space-between;
+    align-items:center; gap:12px;
+  }
+  .visit .who{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .visit .name{ font-weight:700; font-size:14.5px; color:var(--ink); }
+  .visit .proc{ font-size:13px; color:var(--ink-muted); }
+  .visit .money{ text-align:right; flex-shrink:0; }
+  .visit .vclin{ font-weight:700; font-size:14.5px; color:var(--green-deep); }
+  .visit .vdent{ font-size:12px; color:var(--ink-muted); }
+  .visit.material{ background:var(--nude-soft); border-style:dashed; }
+  .visit.material .name{ color:var(--ink-muted); font-weight:600; font-style:italic; }
+
+  /* ---------- breakdown ---------- */
+  .breakdown{ margin-top:44px; }
+  .bar-row{ margin-bottom:14px; }
+  .bar-row .bar-top{
+    display:flex; justify-content:space-between; font-size:13.5px; margin-bottom:6px;
+  }
+  .bar-row .bar-top .pname{ font-weight:700; color:var(--ink); text-transform:capitalize; }
+  .bar-row .bar-top .pcount{ color:var(--ink-muted); }
+  .bar-track{ background:var(--nude); border-radius:100px; height:9px; overflow:hidden; }
+  .bar-fill{ height:100%; background:linear-gradient(90deg, var(--green-mid), var(--green-deep)); border-radius:100px; }
+
+  footer.foot{
+    margin-top:50px; padding-top:20px; border-top:1px solid var(--line);
+    font-size:12.5px; color:var(--ink-muted); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
+  }
+
+  @media (max-width:560px){
+    .hero .big{ font-size:40px; }
+    .day-group{ padding-left:56px; }
+    .day-badge{ width:44px; }
+    .visit{ flex-direction:column; align-items:flex-start; gap:6px; }
+    .visit .money{ text-align:left; }
+  }
+</style>
+</head>
+<body>
+<div class="texture"></div>
+<div class="shell">
+
+  <header class="top">
+    <div class="brand">
+      <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+        <circle cx="20" cy="20" r="19" fill="#ECE0CD" stroke="#DDD0B9"/>
+        <path d="M20 11c-3.5 0-6 2.6-6 6.2 0 3 1.4 5 2.3 8.4.4 1.5.8 3.1 2 3.1s1.4-1.7 1.7-3c.2-.8.6-1.4 1-1.4s.8.6 1 1.4c.3 1.3.5 3 1.7 3s1.6-1.6 2-3.1c.9-3.4 2.3-5.4 2.3-8.4 0-3.6-2.5-6.2-6-6.2 -1 0-1.6.4-2 .4s-1-.4-2-.4Z" fill="#3F5646"/>
+      </svg>
+      <div class="brand-text">
+        <p class="kicker">Consultório odontológico</p>
+        <h1>Dr. Júlia</h1>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs"></nav>
+  </header>
+
+  <div id="panels"></div>
+
+  <footer class="foot">
+    <span>Consultório Dr. Júlia · painel interno</span>
+    <span>Valores conferidos com a planilha de origem</span>
+  </footer>
+
+</div>
+
+<script>
+/* ---------------- data ---------------- */
+const raw = [
+{"date":"25/08/2026","name":"Arthur Arboleda de Oliveira","proc":"consulta","vclin":450.0,"vdent":112.5},
+{"date":"25/08/2026","name":"Maria Vitoria Gianvechio","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"25/08/2026","name":"Maria Júlia Queiroz de Oliveira","proc":"exo 53","vclin":450.0,"vdent":90.0},
+{"date":"25/08/2026","name":"Maria Flor Ungarette Casagrande","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"27/08/2026","name":"Lucca Storto Sisdelli","proc":"consulta","vclin":450.0,"vdent":112.5},
+{"date":"27/08/2026","name":"Isabela dos Santos Pereira","proc":"rest 16 + selante 46","vclin":1060.0,"vdent":212.0},
+{"date":"01/09/2026","name":"Joaquim Cesario Lopes Neris da Silva","proc":"consulta","vclin":450.0,"vdent":112.5},
+{"date":"01/09/2026","name":"Matteo Badra Soave","proc":"consulta","vclin":450.0,"vdent":112.5},
+{"date":"01/09/2026","name":"Júlia Rocha Pereira","proc":"consulta","vclin":450.0,"vdent":112.5},
+{"date":"01/09/2026","name":"Heitor Andre Rodrigues Dias","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"01/09/2026","name":"Davi Gerstner Lima","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"01/09/2026","name":"Matheus Gerstner Lima","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"02/09/2026","name":"Lucas Avediani Urbaneski","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"02/09/2026","name":"Lucas Avediani Urbaneski","proc":"exo 65","vclin":399.0,"vdent":79.8},
+{"date":"02/09/2026","name":"Pedro Avediani Urbaneski","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"02/09/2026","name":"Lorena Dantas Favaron","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"02/09/2026","name":"Livia Santos Rocha","proc":"ulectomia 12","vclin":530.0,"vdent":106.0},
+{"date":"02/09/2026","name":"Emanoel dos Santos Alves","proc":"rest 84 + selante 85","vclin":1030.0,"vdent":206.0},
+{"date":"03/09/2026","name":"Joaquim Silva Cavalcante","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"03/09/2026","name":"Joaquim Silva Cavalcante","proc":"exo 71","vclin":420.0,"vdent":84.0},
+{"date":"03/09/2026","name":"Celine Silva Cavalcante","proc":"consulta","vclin":450.0,"vdent":112.5},
+{"date":"03/09/2026","name":"Isabela Gorino Franca","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"03/09/2026","name":"Isabela Gorino Franca","proc":"exo 64","vclin":399.0,"vdent":79.8},
+{"date":"03/09/2026","name":"Carolina Migliani de Oliveira","proc":"rest 62","vclin":551.0,"vdent":110.2},
+{"date":"08/09/2026","name":"Theo Curzel Beck Ceccarello","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"08/09/2026","name":"João Pedro dos Santos Silva","proc":"consulta","vclin":450.0,"vdent":112.5},
+{"date":"08/09/2026","name":"Antonella dos Santos Botan","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"08/09/2026","name":"Antonella dos Santos Botan","proc":"selante 16","vclin":510.0,"vdent":102.0},
+{"date":"08/09/2026","name":"Iara Teles Rosa","proc":"consulta","vclin":450.0,"vdent":112.5},
+{"date":"08/09/2026","name":"Mariana Watanabe Tamazoli Schuabb","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"08/09/2026","name":"Isabela dos Santos Pereira","proc":"selante 36","vclin":510.0,"vdent":102.0},
+{"date":"09/09/2026","name":"Sofia Benevides de Castro da Silva","proc":"retorno prev","vclin":450.0,"vdent":90.0},
+{"date":"09/09/2026","name":"Beatriz Fulanetti Lopes","proc":"exodontia 71/81","vclin":1000.0,"vdent":200.0},
+{"date":"09/09/2026","name":"Material","proc":"acréscimo de material no repasse","vclin":null,"vdent":40.0},
+{"date":"10/09/2026","name":"Heloísa Freire Feirosa Belarmino","proc":"consulta","vclin":450.0,"vdent":112.5},
+{"date":"10/09/2026","name":"Davi Nicolino","proc":"rest 63 + selante 36/46","vclin":1540.0,"vdent":308.0},
+{"date":"10/09/2026","name":"Luna Rossini","proc":"rest 63","vclin":550.0,"vdent":110.0}
+];
+
+const MONTHS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const WD_PT = ['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
+
+function brl(v){
+  return v.toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+}
+function toDateObj(dstr){
+  const [d,m,y] = dstr.split('/').map(Number);
+  return new Date(y, m-1, d);
+}
+
+/* ---------------- build tabs ---------------- */
+const tabsEl = document.getElementById('tabs');
+const panelsEl = document.getElementById('panels');
+
+const tabsConfig = [
+  { id:'kayane', label:'Dra. Kayane', active:true, hasData:true },
+  { id:'outra1', label:'Outra dentista', active:false, hasData:false },
+  { id:'outra2', label:'Outra dentista', active:false, hasData:false },
+];
+
+tabsConfig.forEach((t, i) => {
+  const btn = document.createElement('button');
+  btn.className = 'tab' + (t.active ? ' active' : '') + (!t.hasData ? ' disabled' : '');
+  btn.textContent = t.hasData ? t.label : (t.label + ' · em breve');
+  btn.dataset.target = t.id;
+  if(t.hasData){
+    btn.addEventListener('click', () => selectTab(t.id));
+  }
+  tabsEl.appendChild(btn);
+});
+
+function selectTab(id){
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.target === id));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-'+id));
+}
+
+/* ---------------- panel: Dra. Kayane (Setembro) ---------------- */
+function buildKayanePanel(){
+  const panel = document.createElement('section');
+  panel.className = 'panel active';
+  panel.id = 'panel-kayane';
+
+  // group by date, keep original order (already chronological in source)
+  const byDate = [];
+  const dateIndex = {};
+  raw.forEach(row => {
+    if(!dateIndex.hasOwnProperty(row.date)){
+      dateIndex[row.date] = byDate.length;
+      byDate.push({date:row.date, items:[]});
+    }
+    byDate[dateIndex[row.date]].items.push(row);
+  });
+
+  const totalClin = raw.reduce((s,r) => s + (r.vclin||0), 0);
+  const totalDent = raw.reduce((s,r) => s + (r.vdent||0), 0) ; // repasse total que a Kayane paga pra Dr. Júlia (já inclui material)
+  const materialTotal = raw.filter(r=>r.name==='Material').reduce((s,r)=>s+(r.vdent||0),0);
+  const netKayane = totalClin - totalDent; // o que fica com a Kayane
+  const visits = raw.filter(r => r.name !== 'Material');
+  const patients = new Set(visits.map(r => r.name)).size;
+  const days = byDate.filter(g=>g.date).length;
+
+  function normalizeProc(p){
+    const s = p.toLowerCase();
+    if(s.startsWith('consulta')) return 'consulta';
+    if(s.startsWith('retorno')) return 'retorno preventivo';
+    if(s.includes('exo') || s.includes('exodontia')) return 'exodontia';
+    if(s.startsWith('rest')) return 'restauração';
+    if(s.startsWith('selante')) return 'selante';
+    if(s.startsWith('ulectomia')) return 'ulectomia';
+    return p.trim();
+  }
+
+  panel.innerHTML = `
+    <p class="period-label">SETEMBRO · 2026</p>
+    <div class="hero">
+      <span class="big">${brl(totalClin)}</span>
+      <span class="big-label">faturado pela Kayane no período</span>
+    </div>
+    <div class="stat-row">
+      <div class="stat-card"><div class="n">${brl(totalDent)}</div><div class="l">repasse pra Dra. Júlia</div></div>
+      <div class="stat-card"><div class="n">${brl(netKayane)}</div><div class="l">fica com a Kayane</div></div>
+      <div class="stat-card"><div class="n">${visits.length}</div><div class="l">atendimentos</div></div>
+      <div class="stat-card"><div class="n">${patients}</div><div class="l">pacientes distintos</div></div>
+      <div class="stat-card"><div class="n">${days}</div><div class="l">dias com agenda</div></div>
+    </div>
+
+    <h2 class="section-title">Agenda do período</h2>
+    <p class="section-sub">Cada linha é um atendimento, na ordem em que foi lançado na planilha.</p>
+
+    <div class="filters">
+      <div class="search">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="5" stroke="#8fa38f" stroke-width="1.4"/><path d="M10.3 10.3L13.5 13.5" stroke="#8fa38f" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <input type="text" id="nameFilter" placeholder="Buscar paciente...">
+      </div>
+      <div class="chip-row" id="procFilters"></div>
+    </div>
+    <p class="filter-status" id="filterStatus"></p>
+
+    <div class="agenda" id="agenda"></div>
+    <div class="no-results" id="noResults">Nenhum atendimento encontrado com esses filtros.</div>
+
+    <div class="breakdown">
+      <h2 class="section-title">Procedimentos mais frequentes</h2>
+      <p class="section-sub">Contagem de lançamentos por tipo de procedimento.</p>
+      <div id="bars"></div>
+    </div>
+  `;
+
+  panelsEl.appendChild(panel);
+
+  const agendaEl = panel.querySelector('#agenda');
+  byDate.forEach(group => {
+    if(!group.date) return; // skip the Material-only orphan group if any
+    const dObj = toDateObj(group.date);
+    const dayNum = dObj.getDate();
+    const monLabel = MONTHS_PT[dObj.getMonth()];
+    const wd = WD_PT[dObj.getDay()];
+    const dayTotal = group.items.reduce((s,r)=> s + (r.vclin||0), 0);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'day-group';
+    wrap.dataset.date = group.date;
+    wrap.innerHTML = `
+      <div class="day-badge"><span class="num">${dayNum}</span><span class="mon">${monLabel}</span></div>
+      <div class="day-header"><span class="wd">${wd}-feira</span><span class="dtot"></span></div>
+      <div class="visits"></div>
+    `;
+    const visitsEl = wrap.querySelector('.visits');
+    group.items.forEach(item => {
+      const v = document.createElement('div');
+      const isMaterial = item.name === 'Material';
+      const cats = item.proc.split('+').map(p => normalizeProc(p.trim()));
+      v.className = 'visit' + (isMaterial ? ' material' : '');
+      v.dataset.name = item.name.toLowerCase();
+      v.dataset.proc = isMaterial ? '' : cats.join('|').toLowerCase();
+      v.dataset.vclin = item.vclin || 0;
+      v.innerHTML = `
+        <div class="who">
+          <span class="name">${item.name}</span>
+          <span class="proc">${item.proc}</span>
+        </div>
+        <div class="money">
+          <div class="vclin">${item.vclin!=null ? brl(item.vclin) : '—'}</div>
+          <div class="vdent">${brl(item.vdent)} p/ Júlia</div>
+        </div>
+      `;
+      visitsEl.appendChild(v);
+    });
+    agendaEl.appendChild(wrap);
+  });
+
+  // procedure breakdown
+  const counts = {};
+  visits.forEach(r => {
+    const parts = r.proc.split('+').map(x=>x.trim());
+    parts.forEach(p => {
+      const key = normalizeProc(p);
+      counts[key] = (counts[key]||0) + 1;
+    });
+  });
+  const maxCount = Math.max(...Object.values(counts));
+  const barsEl = panel.querySelector('#bars');
+  Object.entries(counts).sort((a,b)=>b[1]-a[1]).forEach(([name,count]) => {
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML = `
+      <div class="bar-top"><span class="pname">${name}</span><span class="pcount">${count}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(count/maxCount*100).toFixed(0)}%"></div></div>
+    `;
+    barsEl.appendChild(row);
+  });
+
+  /* ---------- filters logic ---------- */
+  const procFiltersEl = panel.querySelector('#procFilters');
+  const categories = Object.keys(counts).sort();
+  const allChip = document.createElement('button');
+  allChip.className = 'chip active';
+  allChip.textContent = 'Todos os procedimentos';
+  allChip.dataset.value = '';
+  procFiltersEl.appendChild(allChip);
+  categories.forEach(cat => {
+    const chip = document.createElement('button');
+    chip.className = 'chip';
+    chip.textContent = cat;
+    chip.dataset.value = cat;
+    procFiltersEl.appendChild(chip);
+  });
+
+  let activeProc = '';
+  const nameInput = panel.querySelector('#nameFilter');
+  const statusEl = panel.querySelector('#filterStatus');
+  const noResultsEl = panel.querySelector('#noResults');
+  const totalVisitCount = visits.length;
+
+  function applyFilters(){
+    const term = nameInput.value.trim().toLowerCase();
+    let visibleCount = 0;
+
+    agendaEl.querySelectorAll('.day-group').forEach(dayEl => {
+      let dayTotal = 0;
+      let anyVisible = false;
+      dayEl.querySelectorAll('.visit').forEach(v => {
+        if(v.classList.contains('material')){ v.style.display='none'; return; }
+        const nameMatch = !term || v.dataset.name.includes(term);
+        const procMatch = !activeProc || v.dataset.proc.split('|').includes(activeProc);
+        const show = nameMatch && procMatch;
+        v.style.display = show ? 'flex' : 'none';
+        if(show){
+          anyVisible = true;
+          visibleCount++;
+          dayTotal += parseFloat(v.dataset.vclin) || 0;
+        }
+      });
+      dayEl.style.display = anyVisible ? 'block' : 'none';
+      const dtotEl = dayEl.querySelector('.dtot');
+      dtotEl.textContent = anyVisible && dayTotal > 0 ? brl(dayTotal) : '';
+    });
+
+    noResultsEl.style.display = visibleCount === 0 ? 'block' : 'none';
+    agendaEl.style.display = visibleCount === 0 ? 'none' : 'flex';
+
+    if(!term && !activeProc){
+      statusEl.textContent = `Mostrando todos os ${totalVisitCount} atendimentos`;
+    } else {
+      statusEl.innerHTML = `Mostrando <b>${visibleCount}</b> de ${totalVisitCount} atendimentos`;
+    }
+  }
+
+  nameInput.addEventListener('input', applyFilters);
+  procFiltersEl.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if(!chip) return;
+    procFiltersEl.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    activeProc = chip.dataset.value;
+    applyFilters();
+  });
+
+  applyFilters();
+}
+
+/* ---------------- placeholder panels ---------------- */
+function buildEmptyPanel(id, label){
+  const panel = document.createElement('section');
+  panel.className = 'panel';
+  panel.id = 'panel-' + id;
+  panel.innerHTML = `
+    <div class="empty-state">
+      <div class="icon">
+        <svg width="34" height="34" viewBox="0 0 34 34" fill="none">
+          <circle cx="17" cy="17" r="16" stroke="#c9bda3" stroke-width="1.4" stroke-dasharray="3 4"/>
+          <path d="M17 11v12M11 17h12" stroke="#8fa38f" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h3>Sem dados ainda</h3>
+      <p>Quando a planilha dessa dentista ou desse mês for enviada, ela aparece aqui do mesmo jeito.</p>
+    </div>
+  `;
+  panelsEl.appendChild(panel);
+}
+
+buildKayanePanel();
+buildEmptyPanel('outra1','Outra dentista');
+buildEmptyPanel('outra2','Outra dentista');
+</script>
+</body>
+</html>
