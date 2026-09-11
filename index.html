@@ -360,6 +360,8 @@ function buildKayanePanel(){
   const visits = raw.filter(r => r.name !== 'Material');
   const patients = new Set(visits.map(r => r.name)).size;
   const days = byDate.filter(g=>g.date).length;
+  const avgJuliaDia = totalDent / days;
+  const avgKayaneDia = netKayane / days;
 
   function normalizeProc(p){
     const s = p.toLowerCase();
@@ -379,6 +381,8 @@ function buildKayanePanel(){
       <span class="big-label">faturado pela Kayane no período</span>
     </div>
     <div class="stat-row">
+      <div class="stat-card"><div class="n">${brl(avgJuliaDia)}</div><div class="l">média/dia · Júlia</div></div>
+      <div class="stat-card"><div class="n">${brl(avgKayaneDia)}</div><div class="l">média/dia · Kayane</div></div>
       <div class="stat-card"><div class="n">${brl(totalDent)}</div><div class="l">repasse pra Dra. Júlia</div></div>
       <div class="stat-card"><div class="n">${brl(netKayane)}</div><div class="l">fica com a Kayane</div></div>
       <div class="stat-card"><div class="n">${visits.length}</div><div class="l">atendimentos</div></div>
