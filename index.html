@@ -181,10 +181,15 @@
   }
   .day-header{
     display:flex; justify-content:space-between; align-items:baseline;
-    padding:2px 0 10px; font-size:13px; color:var(--ink-muted);
+    padding:2px 0 10px; font-size:13px; color:var(--ink-muted); flex-wrap:wrap; gap:6px 14px;
   }
   .day-header .wd{ text-transform:capitalize; font-weight:700; color:var(--green-mid); }
-  .day-header .dtot{ font-weight:700; color:var(--green-deep); }
+  .day-totals{ display:flex; gap:14px; flex-wrap:wrap; }
+  .day-totals span{ display:inline-flex; align-items:center; gap:5px; }
+  .day-totals .dot{ width:6px; height:6px; border-radius:50%; display:inline-block; }
+  .day-totals .dot.julia{ background:var(--green-deep); }
+  .day-totals .dot.kayane{ background:#c69c6d; }
+  .day-totals b{ color:var(--ink); font-weight:800; }
 
   .visit{
     background:var(--white); border:1px solid var(--line); border-radius:14px;
@@ -406,20 +411,29 @@ function buildKayanePanel(){
   panelsEl.appendChild(panel);
 
   const agendaEl = panel.querySelector('#agenda');
-  byDate.forEach(group => {
+  const byDateDesc = byDate.slice().reverse(); // do dia mais recente pro mais antigo
+  byDateDesc.forEach(group => {
     if(!group.date) return; // skip the Material-only orphan group if any
     const dObj = toDateObj(group.date);
     const dayNum = dObj.getDate();
     const monLabel = MONTHS_PT[dObj.getMonth()];
     const wd = WD_PT[dObj.getDay()];
-    const dayTotal = group.items.reduce((s,r)=> s + (r.vclin||0), 0);
+    const dayVclin = group.items.reduce((s,r)=> s + (r.vclin||0), 0);
+    const dayVdent = group.items.reduce((s,r)=> s + (r.vdent||0), 0);
+    const dayKayane = dayVclin - dayVdent;
 
     const wrap = document.createElement('div');
     wrap.className = 'day-group';
     wrap.dataset.date = group.date;
     wrap.innerHTML = `
       <div class="day-badge"><span class="num">${dayNum}</span><span class="mon">${monLabel}</span></div>
-      <div class="day-header"><span class="wd">${wd}-feira</span><span class="dtot"></span></div>
+      <div class="day-header">
+        <span class="wd">${wd}-feira</span>
+        <span class="day-totals">
+          <span class="dt-julia"><span class="dot julia"></span>Júlia <b></b></span>
+          <span class="dt-kayane"><span class="dot kayane"></span>Kayane <b></b></span>
+        </span>
+      </div>
       <div class="visits"></div>
     `;
     const visitsEl = wrap.querySelector('.visits');
@@ -431,6 +445,7 @@ function buildKayanePanel(){
       v.dataset.name = item.name.toLowerCase();
       v.dataset.proc = isMaterial ? '' : cats.join('|').toLowerCase();
       v.dataset.vclin = item.vclin || 0;
+      v.dataset.vdent = item.vdent || 0;
       v.innerHTML = `
         <div class="who">
           <span class="name">${item.name}</span>
@@ -494,10 +509,14 @@ function buildKayanePanel(){
     let visibleCount = 0;
 
     agendaEl.querySelectorAll('.day-group').forEach(dayEl => {
-      let dayTotal = 0;
+      let dayVclin = 0, dayVdent = 0;
       let anyVisible = false;
       dayEl.querySelectorAll('.visit').forEach(v => {
-        if(v.classList.contains('material')){ v.style.display='none'; return; }
+        if(v.classList.contains('material')){
+          v.style.display='none';
+          dayVdent += parseFloat(v.dataset.vdent) || 0; // material sempre soma no repasse do dia
+          return;
+        }
         const nameMatch = !term || v.dataset.name.includes(term);
         const procMatch = !activeProc || v.dataset.proc.split('|').includes(activeProc);
         const show = nameMatch && procMatch;
@@ -505,12 +524,15 @@ function buildKayanePanel(){
         if(show){
           anyVisible = true;
           visibleCount++;
-          dayTotal += parseFloat(v.dataset.vclin) || 0;
+          dayVclin += parseFloat(v.dataset.vclin) || 0;
+          dayVdent += parseFloat(v.dataset.vdent) || 0;
         }
       });
       dayEl.style.display = anyVisible ? 'block' : 'none';
-      const dtotEl = dayEl.querySelector('.dtot');
-      dtotEl.textContent = anyVisible && dayTotal > 0 ? brl(dayTotal) : '';
+      const julB = dayEl.querySelector('.dt-julia b');
+      const kayB = dayEl.querySelector('.dt-kayane b');
+      julB.textContent = anyVisible ? brl(dayVdent) : '—';
+      kayB.textContent = anyVisible ? brl(dayVclin - dayVdent) : '—';
     });
 
     noResultsEl.style.display = visibleCount === 0 ? 'block' : 'none';
