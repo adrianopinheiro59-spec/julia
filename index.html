@@ -727,12 +727,16 @@ modalOverlay.innerHTML = `
         <label>Valor clínica (R$)</label>
         <input type="number" step="0.01" min="0" id="f-vclin" placeholder="450,00">
       </div>
-      <div class="field">
-        <label>Repasse p/ Júlia (R$)</label>
-        <input type="number" step="0.01" min="0" id="f-vdent" placeholder="112,50">
+      <div class="field" style="max-width:110px;">
+        <label>% repasse</label>
+        <input type="number" step="0.5" min="0" max="100" id="f-pct" placeholder="20">
       </div>
     </div>
-    <p class="field-hint">O repasse costuma ficar entre 20% e 25% do valor clínica, mas dá pra ajustar livremente.</p>
+    <div class="field">
+      <label>Repasse p/ Júlia (R$)</label>
+      <input type="number" step="0.01" min="0" id="f-vdent" placeholder="calculado automaticamente">
+    </div>
+    <p class="field-hint">Preenchendo o valor clínico e o %, o repasse é calculado sozinho — mas dá pra digitar o valor na mão se for um caso diferente.</p>
     <p class="form-error" id="f-error">Preenche pelo menos o nome do paciente e um dos valores.</p>
     <div class="modal-actions">
       <button class="btn-cancel" id="f-cancel">Cancelar</button>
@@ -748,6 +752,7 @@ function openAddModal(){
   document.getElementById('f-proc').value = '';
   document.getElementById('f-vclin').value = '';
   document.getElementById('f-vdent').value = '';
+  document.getElementById('f-pct').value = '20';
   document.getElementById('f-date').value = new Date().toISOString().slice(0,10);
   document.getElementById('f-error').style.display = 'none';
   setTimeout(() => document.getElementById('f-name').focus(), 50);
@@ -757,6 +762,23 @@ function closeAddModal(){
 }
 modalOverlay.addEventListener('click', (e) => { if(e.target === modalOverlay) closeAddModal(); });
 document.getElementById('f-cancel').addEventListener('click', closeAddModal);
+
+/* recalcula o repasse sempre que o valor clínica ou o % mudam */
+function recalcRepasse(){
+  const vclin = parseFloat(document.getElementById('f-vclin').value);
+  const pct = parseFloat(document.getElementById('f-pct').value);
+  if(!isNaN(vclin) && !isNaN(pct)){
+    document.getElementById('f-vdent').value = (vclin * pct / 100).toFixed(2);
+  }
+}
+document.getElementById('f-vclin').addEventListener('input', recalcRepasse);
+document.getElementById('f-pct').addEventListener('input', recalcRepasse);
+/* sugere 25% pra consulta e 20% pros demais procedimentos, mas não trava — dá pra editar */
+document.getElementById('f-proc').addEventListener('input', () => {
+  const p = document.getElementById('f-proc').value.trim().toLowerCase();
+  document.getElementById('f-pct').value = p.startsWith('consulta') ? '25' : '20';
+  recalcRepasse();
+});
 
 document.getElementById('f-save').addEventListener('click', () => {
   const name = document.getElementById('f-name').value.trim();
