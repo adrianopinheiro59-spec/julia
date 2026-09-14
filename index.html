@@ -92,6 +92,10 @@
     font-size:13px; font-weight:700; letter-spacing:.03em; color:var(--green-mid);
     margin:0 0 6px;
   }
+  .sync-warning{
+    font-size:12.5px; color:#a4523a; background:#fbf0ea; border:1px solid #e8cdbc;
+    border-radius:10px; padding:8px 12px; margin:0 0 18px;
+  }
   .hero{
     display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:26px;
   }
@@ -233,6 +237,9 @@
     text-align:center; padding:40px 20px; color:var(--ink-muted); font-size:14px;
     background:var(--nude-soft); border:1px dashed var(--line); border-radius:16px; display:none;
   }
+  .loading-state{
+    text-align:center; padding:60px 20px; color:var(--ink-muted); font-size:14.5px;
+  }
 
   /* ---------- agenda / ledger ---------- */
   .agenda{ display:flex; flex-direction:column; }
@@ -260,8 +267,8 @@
   .day-totals{ display:flex; gap:14px; flex-wrap:wrap; }
   .day-totals span{ display:inline-flex; align-items:center; gap:5px; }
   .day-totals .dot{ width:6px; height:6px; border-radius:50%; display:inline-block; }
-  .day-totals .dot.julia{ background:var(--green-deep); }
-  .day-totals .dot.kayane{ background:#c69c6d; }
+  .day-totals .dot.repasse{ background:var(--green-deep); }
+  .day-totals .dot.net{ background:#c69c6d; }
   .day-totals b{ color:var(--ink); font-weight:800; }
 
   .visit{
@@ -331,8 +338,14 @@
 </div>
 
 <script>
-/* ---------------- data ---------------- */
-let rawEmbedded = [
+/* ---------------- configuração dos consultórios ---------------- */
+const CLINICS = {
+  kayane: {
+    tabLabel: 'Dra. Kayane',
+    billedBy: 'Kayane',
+    repasseTo: 'Dra. Júlia',
+    netLabel: 'Kayane',
+    seed: [
 {"date":"25/08/2026","name":"Arthur Arboleda de Oliveira","proc":"consulta","vclin":450.0,"vdent":112.5},
 {"date":"25/08/2026","name":"Maria Vitoria Gianvechio","proc":"retorno prev","vclin":450.0,"vdent":90.0},
 {"date":"25/08/2026","name":"Maria Júlia Queiroz de Oliveira","proc":"exo 53","vclin":450.0,"vdent":90.0},
@@ -370,49 +383,99 @@ let rawEmbedded = [
 {"date":"10/09/2026","name":"Heloísa Freire Feirosa Belarmino","proc":"consulta","vclin":450.0,"vdent":112.5},
 {"date":"10/09/2026","name":"Davi Nicolino","proc":"rest 63 + selante 36/46","vclin":1540.0,"vdent":308.0},
 {"date":"10/09/2026","name":"Luna Rossini","proc":"rest 63","vclin":550.0,"vdent":110.0}
-];
-
-/* ---------------- persistência local (cadastro pela Júlia) ---------------- */
-const STORAGE_KEY = 'consultorioDrJulia_kayane_novos';
-function loadExtraEntries(){
-  try{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
-  catch(e){ return []; }
-}
-function saveExtraEntries(list){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); }catch(e){}
-}
-let extraEntries = loadExtraEntries();
-let raw = rawEmbedded.concat(extraEntries);
+    ]
+  },
+  oralcenter: {
+    tabLabel: 'Oral Center',
+    billedBy: 'Oral Center',
+    repasseTo: 'Dra. Júlia',
+    netLabel: 'Oral Center',
+    seed: []
+  }
+};
 
 const MONTHS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const MONTHS_PT_UP = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
 const WD_PT = ['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
 
 function brl(v){
-  return v.toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+  return (v||0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
 }
 function toDateObj(dstr){
   const [d,m,y] = dstr.split('/').map(Number);
   return new Date(y, m-1, d);
 }
+function normalizeProc(p){
+  const s = p.toLowerCase();
+  if(s.startsWith('consulta')) return 'consulta';
+  if(s.startsWith('retorno')) return 'retorno preventivo';
+  if(s.includes('exo') || s.includes('exodontia')) return 'exodontia';
+  if(s.startsWith('rest')) return 'restauração';
+  if(s.startsWith('selante')) return 'selante';
+  if(s.startsWith('ulectomia')) return 'ulectomia';
+  return p.trim();
+}
+
+/* ---------------- estado + sincronização com Google Sheets ---------------- */
+const SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbxe12lXnKAyD61F1uZVw8opRfaa6EnH8FwqM_rb_2-3RKXzXu-TTdrb4c3QOuawAJtyKg/exec';
+
+class ClinicState{
+  constructor(key, seed){
+    this.key = key;
+    this.rawEmbedded = seed;
+    this.extraEntries = [];
+    this.raw = this.rawEmbedded;
+    this.syncError = false;
+  }
+  async fetchExtra(){
+    try{
+      const res = await fetch(`${SHEETS_API_URL}?clinic=${encodeURIComponent(this.key)}`);
+      if(!res.ok) throw new Error('resposta não ok');
+      const data = await res.json();
+      this.extraEntries = data.map(e => ({
+        date: e.date, name: e.name, proc: e.proc,
+        vclin: e.vclin, vdent: e.vdent,
+        _id: e.id, _extra: true
+      }));
+      this.syncError = false;
+    }catch(err){
+      this.syncError = true;
+    }
+    this.raw = this.rawEmbedded.concat(this.extraEntries);
+  }
+  async addEntry(entry){
+    const id = 'e' + Date.now() + Math.floor(Math.random()*1000);
+    await fetch(SHEETS_API_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action:'add', clinic:this.key, id, ...entry })
+    });
+    this.extraEntries.push({ ...entry, _id:id, _extra:true });
+    this.raw = this.rawEmbedded.concat(this.extraEntries);
+  }
+  async removeEntry(id){
+    await fetch(SHEETS_API_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action:'delete', clinic:this.key, id })
+    });
+    this.extraEntries = this.extraEntries.filter(e => e._id !== id);
+    this.raw = this.rawEmbedded.concat(this.extraEntries);
+  }
+}
+
+const clinicState = {};
+Object.keys(CLINICS).forEach(key => { clinicState[key] = new ClinicState(key, CLINICS[key].seed); });
 
 /* ---------------- build tabs ---------------- */
 const tabsEl = document.getElementById('tabs');
 const panelsEl = document.getElementById('panels');
+const clinicKeys = Object.keys(CLINICS);
 
-const tabsConfig = [
-  { id:'kayane', label:'Dra. Kayane', active:true, hasData:true },
-  { id:'outra1', label:'Outra dentista', active:false, hasData:false },
-  { id:'outra2', label:'Outra dentista', active:false, hasData:false },
-];
-
-tabsConfig.forEach((t, i) => {
+clinicKeys.forEach((key, i) => {
   const btn = document.createElement('button');
-  btn.className = 'tab' + (t.active ? ' active' : '') + (!t.hasData ? ' disabled' : '');
-  btn.textContent = t.hasData ? t.label : (t.label + ' · em breve');
-  btn.dataset.target = t.id;
-  if(t.hasData){
-    btn.addEventListener('click', () => selectTab(t.id));
-  }
+  btn.className = 'tab' + (i === 0 ? ' active' : '');
+  btn.textContent = CLINICS[key].tabLabel;
+  btn.dataset.target = key;
+  btn.addEventListener('click', () => selectTab(key));
   tabsEl.appendChild(btn);
 });
 
@@ -421,13 +484,16 @@ function selectTab(id){
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-'+id));
 }
 
-/* ---------------- panel: Dra. Kayane (Setembro) ---------------- */
-function buildKayanePanel(){
-  const panel = document.createElement('section');
-  panel.className = 'panel active';
-  panel.id = 'panel-kayane';
+/* ---------------- painel de um consultório ---------------- */
+function buildClinicPanel(key){
+  const cfg = CLINICS[key];
+  const state = clinicState[key];
+  const raw = state.raw;
 
-  // group by date, keep original order (already chronological in source)
+  const panel = document.createElement('section');
+  panel.className = 'panel' + (key === clinicKeys[0] ? ' active' : '');
+  panel.id = 'panel-' + key;
+
   const byDate = [];
   const dateIndex = {};
   raw.forEach(row => {
@@ -437,33 +503,20 @@ function buildKayanePanel(){
     }
     byDate[dateIndex[row.date]].items.push(row);
   });
-  byDate.sort((a,b) => toDateObj(a.date) - toDateObj(b.date)); // garante ordem cronológica mesmo com lançamentos fora de ordem
+  byDate.sort((a,b) => toDateObj(a.date) - toDateObj(b.date));
 
   const totalClin = raw.reduce((s,r) => s + (r.vclin||0), 0);
-  const totalDent = raw.reduce((s,r) => s + (r.vdent||0), 0) ; // repasse total que a Kayane paga pra Dr. Júlia (já inclui material)
-  const materialTotal = raw.filter(r=>r.name==='Material').reduce((s,r)=>s+(r.vdent||0),0);
-  const netKayane = totalClin - totalDent; // o que fica com a Kayane
+  const totalDent = raw.reduce((s,r) => s + (r.vdent||0), 0); // repasse total
+  const netValue = totalClin - totalDent; // o que fica com quem faturou
   const visits = raw.filter(r => r.name !== 'Material');
   const patients = new Set(visits.map(r => r.name)).size;
   const days = byDate.filter(g=>g.date).length;
-  const avgJuliaDia = totalDent / days;
-  const avgKayaneDia = netKayane / days;
-
-  function normalizeProc(p){
-    const s = p.toLowerCase();
-    if(s.startsWith('consulta')) return 'consulta';
-    if(s.startsWith('retorno')) return 'retorno preventivo';
-    if(s.includes('exo') || s.includes('exodontia')) return 'exodontia';
-    if(s.startsWith('rest')) return 'restauração';
-    if(s.startsWith('selante')) return 'selante';
-    if(s.startsWith('ulectomia')) return 'ulectomia';
-    return p.trim();
-  }
+  const avgRepasseDia = days ? totalDent / days : 0;
+  const avgNetDia = days ? netValue / days : 0;
 
   const sortedDates = byDate.map(g => toDateObj(g.date)).sort((a,b) => a-b);
-  const MONTHS_PT_UP = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
   function periodLabel(){
-    if(sortedDates.length === 0) return '';
+    if(sortedDates.length === 0) return 'Nenhum atendimento cadastrado ainda';
     const first = sortedDates[0], last = sortedDates[sortedDates.length-1];
     const fLabel = `${MONTHS_PT_UP[first.getMonth()]} ${first.getFullYear()}`;
     const lLabel = `${MONTHS_PT_UP[last.getMonth()]} ${last.getFullYear()}`;
@@ -472,15 +525,16 @@ function buildKayanePanel(){
 
   panel.innerHTML = `
     <p class="period-label">${periodLabel()}</p>
+    ${state.syncError ? `<p class="sync-warning">⚠️ não foi possível sincronizar com a planilha agora — mostrando só os dados originais. Tente "Atualizar" ou confira sua internet.</p>` : ''}
     <div class="hero">
       <span class="big">${brl(totalClin)}</span>
-      <span class="big-label">faturado pela Kayane no período</span>
+      <span class="big-label">faturado por ${cfg.billedBy} no período</span>
     </div>
     <div class="stat-row">
-      <div class="stat-card"><div class="n">${brl(avgJuliaDia)}</div><div class="l">média/dia · Júlia</div></div>
-      <div class="stat-card"><div class="n">${brl(avgKayaneDia)}</div><div class="l">média/dia · Kayane</div></div>
-      <div class="stat-card"><div class="n">${brl(totalDent)}</div><div class="l">repasse pra Dra. Júlia</div></div>
-      <div class="stat-card"><div class="n">${brl(netKayane)}</div><div class="l">fica com a Kayane</div></div>
+      <div class="stat-card"><div class="n">${brl(avgRepasseDia)}</div><div class="l">média/dia · ${cfg.repasseTo}</div></div>
+      <div class="stat-card"><div class="n">${brl(avgNetDia)}</div><div class="l">média/dia · ${cfg.netLabel}</div></div>
+      <div class="stat-card"><div class="n">${brl(totalDent)}</div><div class="l">repasse pra ${cfg.repasseTo}</div></div>
+      <div class="stat-card"><div class="n">${brl(netValue)}</div><div class="l">fica com ${cfg.netLabel}</div></div>
       <div class="stat-card"><div class="n">${visits.length}</div><div class="l">atendimentos</div></div>
       <div class="stat-card"><div class="n">${patients}</div><div class="l">pacientes distintos</div></div>
       <div class="stat-card"><div class="n">${days}</div><div class="l">dias com agenda</div></div>
@@ -492,6 +546,10 @@ function buildKayanePanel(){
         <p class="section-sub">Cada linha é um atendimento, na ordem em que foi lançado.</p>
       </div>
       <div class="section-actions">
+        <button class="btn-outline" id="refreshBtn" title="Buscar atualizações da planilha">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12 3.5A5.5 5.5 0 1 0 13 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M12 1.5v2.5H9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Atualizar
+        </button>
         <button class="btn-outline" id="downloadExcelBtn">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8m0 0L4 6m3 3l3-3M2 12h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Baixar Excel
@@ -514,6 +572,16 @@ function buildKayanePanel(){
 
     <div class="agenda" id="agenda"></div>
     <div class="no-results" id="noResults">Nenhum atendimento encontrado com esses filtros.</div>
+    <div class="empty-state" id="emptyClinic" style="display:none;">
+      <div class="icon">
+        <svg width="34" height="34" viewBox="0 0 34 34" fill="none">
+          <circle cx="17" cy="17" r="16" stroke="#c9bda3" stroke-width="1.4" stroke-dasharray="3 4"/>
+          <path d="M17 11v12M11 17h12" stroke="#8fa38f" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h3>Sem atendimentos ainda</h3>
+      <p>Clique em "Novo atendimento" pra começar a cadastrar aqui.</p>
+    </div>
 
     <div class="breakdown">
       <h2 class="section-title">Procedimentos mais frequentes</h2>
@@ -525,82 +593,90 @@ function buildKayanePanel(){
   panelsEl.appendChild(panel);
 
   const agendaEl = panel.querySelector('#agenda');
-  const byDateDesc = byDate.slice().reverse(); // do dia mais recente pro mais antigo
-  byDateDesc.forEach(group => {
-    if(!group.date) return; // skip the Material-only orphan group if any
-    const dObj = toDateObj(group.date);
-    const dayNum = dObj.getDate();
-    const monLabel = MONTHS_PT[dObj.getMonth()];
-    const wd = WD_PT[dObj.getDay()];
-    const dayVclin = group.items.reduce((s,r)=> s + (r.vclin||0), 0);
-    const dayVdent = group.items.reduce((s,r)=> s + (r.vdent||0), 0);
-    const dayKayane = dayVclin - dayVdent;
+  const emptyClinicEl = panel.querySelector('#emptyClinic');
 
-    const wrap = document.createElement('div');
-    wrap.className = 'day-group';
-    wrap.dataset.date = group.date;
-    wrap.innerHTML = `
-      <div class="day-badge"><span class="num">${dayNum}</span><span class="mon">${monLabel}</span></div>
-      <div class="day-header">
-        <span class="wd">${wd}-feira</span>
-        <span class="day-totals">
-          <span class="dt-julia"><span class="dot julia"></span>Júlia <b></b></span>
-          <span class="dt-kayane"><span class="dot kayane"></span>Kayane <b></b></span>
-        </span>
-      </div>
-      <div class="visits"></div>
-    `;
-    const visitsEl = wrap.querySelector('.visits');
-    group.items.forEach(item => {
-      const v = document.createElement('div');
-      const isMaterial = item.name === 'Material';
-      const isExtra = !!item._extra;
-      const cats = item.proc.split('+').map(p => normalizeProc(p.trim()));
-      v.className = 'visit' + (isMaterial ? ' material' : '') + (isExtra ? ' is-new' : '');
-      v.dataset.name = item.name.toLowerCase();
-      v.dataset.proc = isMaterial ? '' : cats.join('|').toLowerCase();
-      v.dataset.vclin = item.vclin || 0;
-      v.dataset.vdent = item.vdent || 0;
-      v.innerHTML = `
-        <div class="who">
-          <span class="name">${item.name}${isExtra ? '<span class="badge-new">novo</span>' : ''}</span>
-          <span class="proc">${item.proc}</span>
+  if(byDate.length === 0){
+    agendaEl.style.display = 'none';
+    emptyClinicEl.style.display = 'block';
+  } else {
+    const byDateDesc = byDate.slice().reverse();
+    byDateDesc.forEach(group => {
+      if(!group.date) return;
+      const dObj = toDateObj(group.date);
+      const dayNum = dObj.getDate();
+      const monLabel = MONTHS_PT[dObj.getMonth()];
+      const wd = WD_PT[dObj.getDay()];
+
+      const wrap = document.createElement('div');
+      wrap.className = 'day-group';
+      wrap.dataset.date = group.date;
+      wrap.innerHTML = `
+        <div class="day-badge"><span class="num">${dayNum}</span><span class="mon">${monLabel}</span></div>
+        <div class="day-header">
+          <span class="wd">${wd}-feira</span>
+          <span class="day-totals">
+            <span class="dt-repasse"><span class="dot repasse"></span>${cfg.repasseTo} <b></b></span>
+            <span class="dt-net"><span class="dot net"></span>${cfg.netLabel} <b></b></span>
+          </span>
         </div>
-        <div class="money">
-          <div class="vclin">${item.vclin!=null ? brl(item.vclin) : '—'}</div>
-          <div class="vdent">${brl(item.vdent)} p/ Júlia</div>
-        </div>
-        ${isExtra ? `<button class="visit-remove" data-remove-id="${item._id}" title="Remover">×</button>` : ''}
+        <div class="visits"></div>
       `;
-      visitsEl.appendChild(v);
+      const visitsEl = wrap.querySelector('.visits');
+      group.items.forEach(item => {
+        const v = document.createElement('div');
+        const isMaterial = item.name === 'Material';
+        const isExtra = !!item._extra;
+        const cats = item.proc.split('+').map(p => normalizeProc(p.trim()));
+        v.className = 'visit' + (isMaterial ? ' material' : '') + (isExtra ? ' is-new' : '');
+        v.dataset.name = item.name.toLowerCase();
+        v.dataset.proc = isMaterial ? '' : cats.join('|').toLowerCase();
+        v.dataset.vclin = item.vclin || 0;
+        v.dataset.vdent = item.vdent || 0;
+        v.innerHTML = `
+          <div class="who">
+            <span class="name">${item.name}${isExtra ? '<span class="badge-new">novo</span>' : ''}</span>
+            <span class="proc">${item.proc}</span>
+          </div>
+          <div class="money">
+            <div class="vclin">${item.vclin!=null ? brl(item.vclin) : '—'}</div>
+            <div class="vdent">${brl(item.vdent)} p/ ${cfg.repasseTo}</div>
+          </div>
+          ${isExtra ? `<button class="visit-remove" data-remove-id="${item._id}" title="Remover">×</button>` : ''}
+        `;
+        visitsEl.appendChild(v);
+      });
+      agendaEl.appendChild(wrap);
     });
-    agendaEl.appendChild(wrap);
-  });
+  }
 
   // procedure breakdown
   const counts = {};
   visits.forEach(r => {
     const parts = r.proc.split('+').map(x=>x.trim());
     parts.forEach(p => {
-      const key = normalizeProc(p);
-      counts[key] = (counts[key]||0) + 1;
+      const catKey = normalizeProc(p);
+      counts[catKey] = (counts[catKey]||0) + 1;
     });
   });
-  const maxCount = Math.max(...Object.values(counts));
   const barsEl = panel.querySelector('#bars');
-  Object.entries(counts).sort((a,b)=>b[1]-a[1]).forEach(([name,count]) => {
-    const row = document.createElement('div');
-    row.className = 'bar-row';
-    row.innerHTML = `
-      <div class="bar-top"><span class="pname">${name}</span><span class="pcount">${count}</span></div>
-      <div class="bar-track"><div class="bar-fill" style="width:${(count/maxCount*100).toFixed(0)}%"></div></div>
-    `;
-    barsEl.appendChild(row);
-  });
-
-  /* ---------- filters logic ---------- */
-  const procFiltersEl = panel.querySelector('#procFilters');
   const categories = Object.keys(counts).sort();
+  if(categories.length === 0){
+    barsEl.innerHTML = `<p class="section-sub" style="margin:0;">Sem procedimentos cadastrados ainda.</p>`;
+  } else {
+    const maxCount = Math.max(...Object.values(counts));
+    Object.entries(counts).sort((a,b)=>b[1]-a[1]).forEach(([name,count]) => {
+      const row = document.createElement('div');
+      row.className = 'bar-row';
+      row.innerHTML = `
+        <div class="bar-top"><span class="pname">${name}</span><span class="pcount">${count}</span></div>
+        <div class="bar-track"><div class="bar-fill" style="width:${(count/maxCount*100).toFixed(0)}%"></div></div>
+      `;
+      barsEl.appendChild(row);
+    });
+  }
+
+  /* ---------- filtros ---------- */
+  const procFiltersEl = panel.querySelector('#procFilters');
   const allChip = document.createElement('button');
   allChip.className = 'chip active';
   allChip.textContent = 'Todos os procedimentos';
@@ -621,6 +697,10 @@ function buildKayanePanel(){
   const totalVisitCount = visits.length;
 
   function applyFilters(){
+    if(byDate.length === 0){
+      statusEl.textContent = '';
+      return;
+    }
     const term = nameInput.value.trim().toLowerCase();
     let visibleCount = 0;
 
@@ -630,7 +710,7 @@ function buildKayanePanel(){
       dayEl.querySelectorAll('.visit').forEach(v => {
         if(v.classList.contains('material')){
           v.style.display='none';
-          dayVdent += parseFloat(v.dataset.vdent) || 0; // material sempre soma no repasse do dia
+          dayVdent += parseFloat(v.dataset.vdent) || 0;
           return;
         }
         const nameMatch = !term || v.dataset.name.includes(term);
@@ -645,10 +725,10 @@ function buildKayanePanel(){
         }
       });
       dayEl.style.display = anyVisible ? 'block' : 'none';
-      const julB = dayEl.querySelector('.dt-julia b');
-      const kayB = dayEl.querySelector('.dt-kayane b');
-      julB.textContent = anyVisible ? brl(dayVdent) : '—';
-      kayB.textContent = anyVisible ? brl(dayVclin - dayVdent) : '—';
+      const repB = dayEl.querySelector('.dt-repasse b');
+      const netB = dayEl.querySelector('.dt-net b');
+      repB.textContent = anyVisible ? brl(dayVdent) : '—';
+      netB.textContent = anyVisible ? brl(dayVclin - dayVdent) : '—';
     });
 
     noResultsEl.style.display = visibleCount === 0 ? 'block' : 'none';
@@ -671,44 +751,42 @@ function buildKayanePanel(){
     applyFilters();
   });
 
-  panel.querySelector('#openAddModal').addEventListener('click', openAddModal);
-  panel.querySelector('#downloadExcelBtn').addEventListener('click', () => exportExcelKayane(raw));
+  panel.querySelector('#openAddModal').addEventListener('click', () => openAddModal(key));
+  panel.querySelector('#downloadExcelBtn').addEventListener('click', () => exportExcelClinic(key));
+  panel.querySelector('#refreshBtn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.style.opacity = '.6';
+    await clinicState[key].fetchExtra();
+    rerenderClinic(key);
+  });
   agendaEl.addEventListener('click', (e) => {
     const btn = e.target.closest('.visit-remove');
     if(!btn) return;
-    removeExtraEntry(btn.dataset.removeId);
+    removeExtraEntry(key, btn.dataset.removeId);
   });
 
   applyFilters();
 }
 
-/* ---------------- placeholder panels ---------------- */
-function buildEmptyPanel(id, label){
-  const panel = document.createElement('section');
-  panel.className = 'panel';
-  panel.id = 'panel-' + id;
-  panel.innerHTML = `
-    <div class="empty-state">
-      <div class="icon">
-        <svg width="34" height="34" viewBox="0 0 34 34" fill="none">
-          <circle cx="17" cy="17" r="16" stroke="#c9bda3" stroke-width="1.4" stroke-dasharray="3 4"/>
-          <path d="M17 11v12M11 17h12" stroke="#8fa38f" stroke-width="1.6" stroke-linecap="round"/>
-        </svg>
-      </div>
-      <h3>Sem dados ainda</h3>
-      <p>Quando a planilha dessa dentista ou desse mês for enviada, ela aparece aqui do mesmo jeito.</p>
-    </div>
-  `;
-  panelsEl.appendChild(panel);
+function rerenderClinic(key){
+  const old = document.getElementById('panel-' + key);
+  const wasActive = old ? old.classList.contains('active') : (key === clinicKeys[0]);
+  if(old) old.remove();
+  buildClinicPanel(key);
+  const fresh = document.getElementById('panel-' + key);
+  fresh.classList.toggle('active', wasActive);
 }
 
 /* ---------------- cadastro de novo atendimento ---------------- */
+let modalTargetKey = clinicKeys[0];
+
 const modalOverlay = document.createElement('div');
 modalOverlay.className = 'modal-overlay';
 modalOverlay.id = 'addModal';
 modalOverlay.innerHTML = `
   <div class="modal-box">
-    <h3>Novo atendimento</h3>
+    <h3 id="modalTitle">Novo atendimento</h3>
     <p class="modal-sub">Preenche os dados — a agenda e os totais atualizam na hora.</p>
     <div class="field">
       <label>Data</label>
@@ -733,7 +811,7 @@ modalOverlay.innerHTML = `
       </div>
     </div>
     <div class="field">
-      <label>Repasse p/ Júlia (R$)</label>
+      <label id="f-vdent-label">Repasse (R$)</label>
       <input type="number" step="0.01" min="0" id="f-vdent" placeholder="calculado automaticamente">
     </div>
     <p class="field-hint">Preenchendo o valor clínico e o %, o repasse é calculado sozinho — mas dá pra digitar o valor na mão se for um caso diferente.</p>
@@ -746,7 +824,10 @@ modalOverlay.innerHTML = `
 `;
 document.body.appendChild(modalOverlay);
 
-function openAddModal(){
+function openAddModal(key){
+  modalTargetKey = key;
+  document.getElementById('modalTitle').textContent = 'Novo atendimento · ' + CLINICS[key].tabLabel;
+  document.getElementById('f-vdent-label').textContent = 'Repasse p/ ' + CLINICS[key].repasseTo + ' (R$)';
   modalOverlay.classList.add('open');
   document.getElementById('f-name').value = '';
   document.getElementById('f-proc').value = '';
@@ -763,7 +844,6 @@ function closeAddModal(){
 modalOverlay.addEventListener('click', (e) => { if(e.target === modalOverlay) closeAddModal(); });
 document.getElementById('f-cancel').addEventListener('click', closeAddModal);
 
-/* recalcula o repasse sempre que o valor clínica ou o % mudam */
 function recalcRepasse(){
   const vclin = parseFloat(document.getElementById('f-vclin').value);
   const pct = parseFloat(document.getElementById('f-pct').value);
@@ -773,22 +853,23 @@ function recalcRepasse(){
 }
 document.getElementById('f-vclin').addEventListener('input', recalcRepasse);
 document.getElementById('f-pct').addEventListener('input', recalcRepasse);
-/* sugere 25% pra consulta e 20% pros demais procedimentos, mas não trava — dá pra editar */
 document.getElementById('f-proc').addEventListener('input', () => {
   const p = document.getElementById('f-proc').value.trim().toLowerCase();
   document.getElementById('f-pct').value = p.startsWith('consulta') ? '25' : '20';
   recalcRepasse();
 });
 
-document.getElementById('f-save').addEventListener('click', () => {
+document.getElementById('f-save').addEventListener('click', async () => {
   const name = document.getElementById('f-name').value.trim();
   const proc = document.getElementById('f-proc').value.trim() || 'consulta';
   const vclinRaw = document.getElementById('f-vclin').value;
   const vdentRaw = document.getElementById('f-vdent').value;
-  const dateRaw = document.getElementById('f-date').value; // yyyy-mm-dd
+  const dateRaw = document.getElementById('f-date').value;
   const errEl = document.getElementById('f-error');
+  const saveBtn = document.getElementById('f-save');
 
   if(!name || !dateRaw || (!vclinRaw && !vdentRaw)){
+    errEl.textContent = 'Preenche pelo menos o nome do paciente e um dos valores.';
     errEl.style.display = 'block';
     return;
   }
@@ -797,59 +878,55 @@ document.getElementById('f-save').addEventListener('click', () => {
   const [y,m,d] = dateRaw.split('-');
   const dateBR = `${d}/${m}/${y}`;
 
-  const entry = {
-    date: dateBR,
-    name: name,
-    proc: proc,
-    vclin: vclinRaw ? parseFloat(vclinRaw) : null,
-    vdent: vdentRaw ? parseFloat(vdentRaw) : 0,
-    _extra: true,
-    _id: 'e' + Date.now() + Math.floor(Math.random()*1000)
-  };
-
-  extraEntries.push(entry);
-  saveExtraEntries(extraEntries);
-  raw = rawEmbedded.concat(extraEntries);
-
-  closeAddModal();
-  rerenderKayane();
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Salvando...';
+  try{
+    await clinicState[modalTargetKey].addEntry({
+      date: dateBR,
+      name: name,
+      proc: proc,
+      vclin: vclinRaw ? parseFloat(vclinRaw) : null,
+      vdent: vdentRaw ? parseFloat(vdentRaw) : 0
+    });
+    closeAddModal();
+    rerenderClinic(modalTargetKey);
+  }catch(err){
+    errEl.textContent = 'Não foi possível salvar na planilha agora. Verifique sua internet e tente de novo.';
+    errEl.style.display = 'block';
+  }
+  saveBtn.disabled = false;
+  saveBtn.textContent = 'Salvar atendimento';
 });
 
-function removeExtraEntry(id){
-  extraEntries = extraEntries.filter(e => e._id !== id);
-  saveExtraEntries(extraEntries);
-  raw = rawEmbedded.concat(extraEntries);
-  rerenderKayane();
+async function removeExtraEntry(key, id){
+  await clinicState[key].removeEntry(id);
+  rerenderClinic(key);
 }
 
-function rerenderKayane(){
-  const old = document.getElementById('panel-kayane');
-  const wasActive = old ? old.classList.contains('active') : true;
-  if(old) old.remove();
-  buildKayanePanel();
-  const fresh = document.getElementById('panel-kayane');
-  fresh.classList.toggle('active', wasActive);
-}
-
-function exportExcelKayane(dataset){
+function exportExcelClinic(key){
   if(typeof XLSX === 'undefined'){
     alert('Não foi possível carregar a biblioteca de exportação. Verifique sua conexão com a internet e tente de novo.');
     return;
   }
-  const header = ['Data','Paciente','Procedimento','Valor Clínica','Valor Repasse (Júlia)'];
+  const cfg = CLINICS[key];
+  const dataset = clinicState[key].raw;
+  const header = ['Data','Paciente','Procedimento','Valor Clínica','Valor Repasse (' + cfg.repasseTo + ')'];
   const rows = dataset.slice().sort((a,b) => toDateObj(a.date) - toDateObj(b.date))
     .map(r => [r.date, r.name, r.proc, r.vclin!=null ? r.vclin : '', r.vdent!=null ? r.vdent : '']);
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  ws['!cols'] = [{wch:12},{wch:32},{wch:30},{wch:14},{wch:18}];
+  ws['!cols'] = [{wch:12},{wch:32},{wch:30},{wch:14},{wch:20}];
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Dra. Kayane');
+  XLSX.utils.book_append_sheet(wb, ws, cfg.tabLabel);
   const today = new Date().toISOString().slice(0,10);
-  XLSX.writeFile(wb, `consultorio-dr-julia-kayane-${today}.xlsx`);
+  XLSX.writeFile(wb, `consultorio-dr-julia-${key}-${today}.xlsx`);
 }
 
-buildKayanePanel();
-buildEmptyPanel('outra1','Outra dentista');
-buildEmptyPanel('outra2','Outra dentista');
+/* ---------------- carregamento inicial ---------------- */
+panelsEl.innerHTML = `<div class="loading-state">Carregando dados da planilha...</div>`;
+Promise.all(clinicKeys.map(key => clinicState[key].fetchExtra())).then(() => {
+  panelsEl.innerHTML = '';
+  clinicKeys.forEach(key => buildClinicPanel(key));
+});
 </script>
 </body>
 </html>
