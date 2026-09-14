@@ -6,6 +6,7 @@
 <title>Consultório Dr. Júlia — Agenda &amp; Repasses</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:            #f6f2ea;
@@ -119,6 +120,78 @@
     margin:0 0 4px;
   }
   .section-sub{ font-size:13.5px; color:var(--ink-muted); margin:0 0 20px; }
+  .section-head{
+    display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap;
+  }
+
+  .btn-add{
+    display:inline-flex; align-items:center; gap:7px; font-family:'Manrope', sans-serif;
+    font-size:13.5px; font-weight:700; color:var(--white); background:var(--green-deep);
+    border:none; border-radius:100px; padding:10px 18px; cursor:pointer; flex-shrink:0;
+    transition:background .15s ease, transform .1s ease;
+  }
+  .btn-add:hover{ background:#354a3b; }
+  .btn-add:active{ transform:scale(.97); }
+
+  .section-actions{ display:flex; gap:8px; flex-shrink:0; }
+  .btn-outline{
+    display:inline-flex; align-items:center; gap:7px; font-family:'Manrope', sans-serif;
+    font-size:13.5px; font-weight:700; color:var(--green-deep); background:var(--white);
+    border:1px solid var(--line); border-radius:100px; padding:10px 18px; cursor:pointer;
+    flex-shrink:0; transition:border-color .15s ease, background .15s ease, transform .1s ease;
+  }
+  .btn-outline:hover{ border-color:var(--green-mid); background:var(--nude-soft); }
+  .btn-outline:active{ transform:scale(.97); }
+
+  /* ---------- modal ---------- */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(44,53,43,.45); backdrop-filter:blur(2px);
+    display:none; align-items:center; justify-content:center; z-index:50; padding:20px;
+  }
+  .modal-overlay.open{ display:flex; }
+  .modal-box{
+    background:var(--white); border-radius:20px; padding:28px; max-width:440px; width:100%;
+    max-height:88vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,.2);
+  }
+  .modal-box h3{
+    font-family:'Fraunces', serif; font-weight:500; font-size:21px; color:var(--green-deep);
+    margin:0 0 4px;
+  }
+  .modal-box .modal-sub{ font-size:13px; color:var(--ink-muted); margin:0 0 20px; }
+  .field{ margin-bottom:14px; }
+  .field label{
+    display:block; font-size:12.5px; font-weight:700; color:var(--ink-muted); margin-bottom:6px;
+  }
+  .field input{
+    width:100%; font-family:'Manrope', sans-serif; font-size:14px; color:var(--ink);
+    background:var(--nude-soft); border:1px solid var(--line); border-radius:10px;
+    padding:10px 12px; outline:none; transition:border-color .15s ease; box-sizing:border-box;
+  }
+  .field input:focus{ border-color:var(--green-mid); }
+  .field-row{ display:flex; gap:10px; }
+  .field-row .field{ flex:1; }
+  .field-hint{ font-size:11.5px; color:#9a917d; margin-top:4px; }
+  .modal-actions{ display:flex; gap:10px; margin-top:20px; }
+  .btn-cancel, .btn-save{
+    flex:1; font-family:'Manrope', sans-serif; font-size:14px; font-weight:700;
+    padding:11px; border-radius:12px; cursor:pointer; border:1px solid var(--line);
+  }
+  .btn-cancel{ background:var(--white); color:var(--ink-muted); }
+  .btn-save{ background:var(--green-deep); border-color:var(--green-deep); color:var(--white); }
+  .btn-save:hover{ background:#354a3b; }
+  .form-error{ font-size:12.5px; color:#a4523a; margin:-6px 0 12px; display:none; }
+
+  .visit.is-new{ border-color:var(--green-mid); background:#fbfdf8; }
+  .badge-new{
+    display:inline-block; font-size:10px; font-weight:800; letter-spacing:.03em;
+    color:var(--green-deep); background:var(--green-pale); border-radius:100px;
+    padding:2px 8px; margin-left:8px; text-transform:uppercase; vertical-align:middle;
+  }
+  .visit-remove{
+    background:none; border:none; color:#b3a68f; cursor:pointer; font-size:16px;
+    line-height:1; padding:2px 4px; margin-left:8px; flex-shrink:0;
+  }
+  .visit-remove:hover{ color:#a4523a; }
 
   /* ---------- filters ---------- */
   .filters{
@@ -259,7 +332,7 @@
 
 <script>
 /* ---------------- data ---------------- */
-const raw = [
+let rawEmbedded = [
 {"date":"25/08/2026","name":"Arthur Arboleda de Oliveira","proc":"consulta","vclin":450.0,"vdent":112.5},
 {"date":"25/08/2026","name":"Maria Vitoria Gianvechio","proc":"retorno prev","vclin":450.0,"vdent":90.0},
 {"date":"25/08/2026","name":"Maria Júlia Queiroz de Oliveira","proc":"exo 53","vclin":450.0,"vdent":90.0},
@@ -298,6 +371,18 @@ const raw = [
 {"date":"10/09/2026","name":"Davi Nicolino","proc":"rest 63 + selante 36/46","vclin":1540.0,"vdent":308.0},
 {"date":"10/09/2026","name":"Luna Rossini","proc":"rest 63","vclin":550.0,"vdent":110.0}
 ];
+
+/* ---------------- persistência local (cadastro pela Júlia) ---------------- */
+const STORAGE_KEY = 'consultorioDrJulia_kayane_novos';
+function loadExtraEntries(){
+  try{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+  catch(e){ return []; }
+}
+function saveExtraEntries(list){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); }catch(e){}
+}
+let extraEntries = loadExtraEntries();
+let raw = rawEmbedded.concat(extraEntries);
 
 const MONTHS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 const WD_PT = ['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
@@ -352,6 +437,7 @@ function buildKayanePanel(){
     }
     byDate[dateIndex[row.date]].items.push(row);
   });
+  byDate.sort((a,b) => toDateObj(a.date) - toDateObj(b.date)); // garante ordem cronológica mesmo com lançamentos fora de ordem
 
   const totalClin = raw.reduce((s,r) => s + (r.vclin||0), 0);
   const totalDent = raw.reduce((s,r) => s + (r.vdent||0), 0) ; // repasse total que a Kayane paga pra Dr. Júlia (já inclui material)
@@ -374,8 +460,18 @@ function buildKayanePanel(){
     return p.trim();
   }
 
+  const sortedDates = byDate.map(g => toDateObj(g.date)).sort((a,b) => a-b);
+  const MONTHS_PT_UP = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+  function periodLabel(){
+    if(sortedDates.length === 0) return '';
+    const first = sortedDates[0], last = sortedDates[sortedDates.length-1];
+    const fLabel = `${MONTHS_PT_UP[first.getMonth()]} ${first.getFullYear()}`;
+    const lLabel = `${MONTHS_PT_UP[last.getMonth()]} ${last.getFullYear()}`;
+    return fLabel === lLabel ? fLabel : `${fLabel} – ${lLabel}`;
+  }
+
   panel.innerHTML = `
-    <p class="period-label">SETEMBRO · 2026</p>
+    <p class="period-label">${periodLabel()}</p>
     <div class="hero">
       <span class="big">${brl(totalClin)}</span>
       <span class="big-label">faturado pela Kayane no período</span>
@@ -390,8 +486,22 @@ function buildKayanePanel(){
       <div class="stat-card"><div class="n">${days}</div><div class="l">dias com agenda</div></div>
     </div>
 
-    <h2 class="section-title">Agenda do período</h2>
-    <p class="section-sub">Cada linha é um atendimento, na ordem em que foi lançado na planilha.</p>
+    <div class="section-head">
+      <div>
+        <h2 class="section-title">Agenda do período</h2>
+        <p class="section-sub">Cada linha é um atendimento, na ordem em que foi lançado.</p>
+      </div>
+      <div class="section-actions">
+        <button class="btn-outline" id="downloadExcelBtn">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8m0 0L4 6m3 3l3-3M2 12h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Baixar Excel
+        </button>
+        <button class="btn-add" id="openAddModal">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          Novo atendimento
+        </button>
+      </div>
+    </div>
 
     <div class="filters">
       <div class="search">
@@ -444,21 +554,23 @@ function buildKayanePanel(){
     group.items.forEach(item => {
       const v = document.createElement('div');
       const isMaterial = item.name === 'Material';
+      const isExtra = !!item._extra;
       const cats = item.proc.split('+').map(p => normalizeProc(p.trim()));
-      v.className = 'visit' + (isMaterial ? ' material' : '');
+      v.className = 'visit' + (isMaterial ? ' material' : '') + (isExtra ? ' is-new' : '');
       v.dataset.name = item.name.toLowerCase();
       v.dataset.proc = isMaterial ? '' : cats.join('|').toLowerCase();
       v.dataset.vclin = item.vclin || 0;
       v.dataset.vdent = item.vdent || 0;
       v.innerHTML = `
         <div class="who">
-          <span class="name">${item.name}</span>
+          <span class="name">${item.name}${isExtra ? '<span class="badge-new">novo</span>' : ''}</span>
           <span class="proc">${item.proc}</span>
         </div>
         <div class="money">
           <div class="vclin">${item.vclin!=null ? brl(item.vclin) : '—'}</div>
           <div class="vdent">${brl(item.vdent)} p/ Júlia</div>
         </div>
+        ${isExtra ? `<button class="visit-remove" data-remove-id="${item._id}" title="Remover">×</button>` : ''}
       `;
       visitsEl.appendChild(v);
     });
@@ -559,6 +671,14 @@ function buildKayanePanel(){
     applyFilters();
   });
 
+  panel.querySelector('#openAddModal').addEventListener('click', openAddModal);
+  panel.querySelector('#downloadExcelBtn').addEventListener('click', () => exportExcelKayane(raw));
+  agendaEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.visit-remove');
+    if(!btn) return;
+    removeExtraEntry(btn.dataset.removeId);
+  });
+
   applyFilters();
 }
 
@@ -580,6 +700,129 @@ function buildEmptyPanel(id, label){
     </div>
   `;
   panelsEl.appendChild(panel);
+}
+
+/* ---------------- cadastro de novo atendimento ---------------- */
+const modalOverlay = document.createElement('div');
+modalOverlay.className = 'modal-overlay';
+modalOverlay.id = 'addModal';
+modalOverlay.innerHTML = `
+  <div class="modal-box">
+    <h3>Novo atendimento</h3>
+    <p class="modal-sub">Preenche os dados — a agenda e os totais atualizam na hora.</p>
+    <div class="field">
+      <label>Data</label>
+      <input type="date" id="f-date">
+    </div>
+    <div class="field">
+      <label>Nome do paciente</label>
+      <input type="text" id="f-name" placeholder="Ex: Maria Silva">
+    </div>
+    <div class="field">
+      <label>Procedimento</label>
+      <input type="text" id="f-proc" placeholder="Ex: consulta, retorno prev, rest 16">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Valor clínica (R$)</label>
+        <input type="number" step="0.01" min="0" id="f-vclin" placeholder="450,00">
+      </div>
+      <div class="field">
+        <label>Repasse p/ Júlia (R$)</label>
+        <input type="number" step="0.01" min="0" id="f-vdent" placeholder="112,50">
+      </div>
+    </div>
+    <p class="field-hint">O repasse costuma ficar entre 20% e 25% do valor clínica, mas dá pra ajustar livremente.</p>
+    <p class="form-error" id="f-error">Preenche pelo menos o nome do paciente e um dos valores.</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="f-cancel">Cancelar</button>
+      <button class="btn-save" id="f-save">Salvar atendimento</button>
+    </div>
+  </div>
+`;
+document.body.appendChild(modalOverlay);
+
+function openAddModal(){
+  modalOverlay.classList.add('open');
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-proc').value = '';
+  document.getElementById('f-vclin').value = '';
+  document.getElementById('f-vdent').value = '';
+  document.getElementById('f-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('f-error').style.display = 'none';
+  setTimeout(() => document.getElementById('f-name').focus(), 50);
+}
+function closeAddModal(){
+  modalOverlay.classList.remove('open');
+}
+modalOverlay.addEventListener('click', (e) => { if(e.target === modalOverlay) closeAddModal(); });
+document.getElementById('f-cancel').addEventListener('click', closeAddModal);
+
+document.getElementById('f-save').addEventListener('click', () => {
+  const name = document.getElementById('f-name').value.trim();
+  const proc = document.getElementById('f-proc').value.trim() || 'consulta';
+  const vclinRaw = document.getElementById('f-vclin').value;
+  const vdentRaw = document.getElementById('f-vdent').value;
+  const dateRaw = document.getElementById('f-date').value; // yyyy-mm-dd
+  const errEl = document.getElementById('f-error');
+
+  if(!name || !dateRaw || (!vclinRaw && !vdentRaw)){
+    errEl.style.display = 'block';
+    return;
+  }
+  errEl.style.display = 'none';
+
+  const [y,m,d] = dateRaw.split('-');
+  const dateBR = `${d}/${m}/${y}`;
+
+  const entry = {
+    date: dateBR,
+    name: name,
+    proc: proc,
+    vclin: vclinRaw ? parseFloat(vclinRaw) : null,
+    vdent: vdentRaw ? parseFloat(vdentRaw) : 0,
+    _extra: true,
+    _id: 'e' + Date.now() + Math.floor(Math.random()*1000)
+  };
+
+  extraEntries.push(entry);
+  saveExtraEntries(extraEntries);
+  raw = rawEmbedded.concat(extraEntries);
+
+  closeAddModal();
+  rerenderKayane();
+});
+
+function removeExtraEntry(id){
+  extraEntries = extraEntries.filter(e => e._id !== id);
+  saveExtraEntries(extraEntries);
+  raw = rawEmbedded.concat(extraEntries);
+  rerenderKayane();
+}
+
+function rerenderKayane(){
+  const old = document.getElementById('panel-kayane');
+  const wasActive = old ? old.classList.contains('active') : true;
+  if(old) old.remove();
+  buildKayanePanel();
+  const fresh = document.getElementById('panel-kayane');
+  fresh.classList.toggle('active', wasActive);
+}
+
+function exportExcelKayane(dataset){
+  if(typeof XLSX === 'undefined'){
+    alert('Não foi possível carregar a biblioteca de exportação. Verifique sua conexão com a internet e tente de novo.');
+    return;
+  }
+  const header = ['Data','Paciente','Procedimento','Valor Clínica','Valor Repasse (Júlia)'];
+  const rows = dataset.slice().sort((a,b) => toDateObj(a.date) - toDateObj(b.date))
+    .map(r => [r.date, r.name, r.proc, r.vclin!=null ? r.vclin : '', r.vdent!=null ? r.vdent : '']);
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  ws['!cols'] = [{wch:12},{wch:32},{wch:30},{wch:14},{wch:18}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Dra. Kayane');
+  const today = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `consultorio-dr-julia-kayane-${today}.xlsx`);
 }
 
 buildKayanePanel();
