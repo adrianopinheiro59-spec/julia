@@ -460,11 +460,13 @@ class ClinicState{
       const res = await fetch(`${SHEETS_API_URL}?clinic=${encodeURIComponent(this.key)}`);
       if(!res.ok) throw new Error('resposta não ok');
       const data = await res.json();
-      this.extraEntries = data.map(e => ({
-        date: e.date, name: e.name, proc: e.proc,
-        vclin: e.vclin, vdent: e.vdent,
-        _id: e.id, _extra: true
-      }));
+      this.extraEntries = data
+        .filter(e => e.date && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(String(e.date).trim()) && e.name)
+        .map(e => ({
+          date: e.date, name: e.name, proc: e.proc,
+          vclin: e.vclin, vdent: e.vdent,
+          _id: e.id, _extra: true
+        }));
       this.syncError = false;
     }catch(err){
       this.syncError = true;
