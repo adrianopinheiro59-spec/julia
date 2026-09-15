@@ -21,6 +21,14 @@
     --white:         #fffdf9;
   }
 
+  /* Oral Center usa a mesma paleta nude + a mesma estrutura,
+     só troca o tom de destaque (verde -> terracota) pra diferenciar as abas de relance */
+  #panel-oralcenter, .modal-overlay.accent-oral{
+    --green-deep:  #8a4b34;
+    --green-mid:   #c17f5f;
+    --green-pale:  #ecd4c4;
+  }
+
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
@@ -67,6 +75,7 @@
     white-space:nowrap;
   }
   .tab.active{ background:var(--green-deep); color:var(--white); }
+  .tab.active[data-target="oralcenter"]{ background:#8a4b34; }
   .tab.disabled{
     color:#b3a68f; border:1px dashed var(--line); cursor:default;
   }
@@ -216,6 +225,22 @@
   }
   .filters .search input:focus{ border-color:var(--green-mid); }
   .filters .search input::placeholder{ color:#9a917d; }
+
+  .date-range{
+    display:flex; align-items:center; gap:6px; flex-shrink:0;
+  }
+  .date-range input{
+    font-family:'Manrope', sans-serif; font-size:13px; color:var(--ink);
+    background:var(--nude-soft); border:1px solid var(--line); border-radius:100px;
+    padding:8px 12px; outline:none; transition:border-color .15s ease;
+  }
+  .date-range input:focus{ border-color:var(--green-mid); }
+  .date-range span{ font-size:12px; color:var(--ink-muted); }
+  .date-range .clear-dates{
+    background:none; border:none; color:#b3a68f; cursor:pointer; font-size:12.5px;
+    padding:2px 4px; text-decoration:underline; flex-shrink:0;
+  }
+  .date-range .clear-dates:hover{ color:#a4523a; }
 
   .chip-row{ display:flex; gap:6px; flex-wrap:wrap; }
   .chip{
@@ -405,6 +430,9 @@ function toDateObj(dstr){
   const [d,m,y] = dstr.split('/').map(Number);
   return new Date(y, m-1, d);
 }
+function normalizeStr(s){
+  return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
 function normalizeProc(p){
   const s = p.toLowerCase();
   if(s.startsWith('consulta')) return 'consulta';
@@ -512,7 +540,6 @@ function buildClinicPanel(key){
   const patients = new Set(visits.map(r => r.name)).size;
   const days = byDate.filter(g=>g.date).length;
   const avgRepasseDia = days ? totalDent / days : 0;
-  const avgNetDia = days ? netValue / days : 0;
 
   const sortedDates = byDate.map(g => toDateObj(g.date)).sort((a,b) => a-b);
   function periodLabel(){
@@ -532,7 +559,6 @@ function buildClinicPanel(key){
     </div>
     <div class="stat-row">
       <div class="stat-card"><div class="n">${brl(avgRepasseDia)}</div><div class="l">média/dia · ${cfg.repasseTo}</div></div>
-      <div class="stat-card"><div class="n">${brl(avgNetDia)}</div><div class="l">média/dia · ${cfg.netLabel}</div></div>
       <div class="stat-card"><div class="n">${brl(totalDent)}</div><div class="l">repasse pra ${cfg.repasseTo}</div></div>
       <div class="stat-card"><div class="n">${brl(netValue)}</div><div class="l">fica com ${cfg.netLabel}</div></div>
       <div class="stat-card"><div class="n">${visits.length}</div><div class="l">atendimentos</div></div>
@@ -565,6 +591,12 @@ function buildClinicPanel(key){
       <div class="search">
         <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="5" stroke="#8fa38f" stroke-width="1.4"/><path d="M10.3 10.3L13.5 13.5" stroke="#8fa38f" stroke-width="1.4" stroke-linecap="round"/></svg>
         <input type="text" id="nameFilter" placeholder="Buscar paciente...">
+      </div>
+      <div class="date-range">
+        <input type="date" id="dateFrom" title="Data início">
+        <span>até</span>
+        <input type="date" id="dateTo" title="Data fim">
+        <button class="clear-dates" id="clearDates">limpar</button>
       </div>
       <div class="chip-row" id="procFilters"></div>
     </div>
@@ -628,7 +660,7 @@ function buildClinicPanel(key){
         const isExtra = !!item._extra;
         const cats = item.proc.split('+').map(p => normalizeProc(p.trim()));
         v.className = 'visit' + (isMaterial ? ' material' : '') + (isExtra ? ' is-new' : '');
-        v.dataset.name = item.name.toLowerCase();
+        v.dataset.name = normalizeStr(item.name);
         v.dataset.proc = isMaterial ? '' : cats.join('|').toLowerCase();
         v.dataset.vclin = item.vclin || 0;
         v.dataset.vdent = item.vdent || 0;
@@ -692,6 +724,9 @@ function buildClinicPanel(key){
 
   let activeProc = '';
   const nameInput = panel.querySelector('#nameFilter');
+  const dateFromInput = panel.querySelector('#dateFrom');
+  const dateToInput = panel.querySelector('#dateTo');
+  const clearDatesBtn = panel.querySelector('#clearDates');
   const statusEl = panel.querySelector('#filterStatus');
   const noResultsEl = panel.querySelector('#noResults');
   const totalVisitCount = visits.length;
@@ -701,10 +736,20 @@ function buildClinicPanel(key){
       statusEl.textContent = '';
       return;
     }
-    const term = nameInput.value.trim().toLowerCase();
+    const term = normalizeStr(nameInput.value.trim());
+    const fromVal = dateFromInput.value;
+    const toVal = dateToInput.value;
+    const fromDate = fromVal ? new Date(fromVal + 'T00:00:00') : null;
+    const toDate = toVal ? new Date(toVal + 'T23:59:59') : null;
     let visibleCount = 0;
 
     agendaEl.querySelectorAll('.day-group').forEach(dayEl => {
+      const dGroupDate = toDateObj(dayEl.dataset.date);
+      const inRange = (!fromDate || dGroupDate >= fromDate) && (!toDate || dGroupDate <= toDate);
+      if(!inRange){
+        dayEl.style.display = 'none';
+        return;
+      }
       let dayVclin = 0, dayVdent = 0;
       let anyVisible = false;
       dayEl.querySelectorAll('.visit').forEach(v => {
@@ -734,14 +779,29 @@ function buildClinicPanel(key){
     noResultsEl.style.display = visibleCount === 0 ? 'block' : 'none';
     agendaEl.style.display = visibleCount === 0 ? 'none' : 'flex';
 
-    if(!term && !activeProc){
+    if(!term && !activeProc && !fromVal && !toVal){
       statusEl.textContent = `Mostrando todos os ${totalVisitCount} atendimentos`;
     } else {
       statusEl.innerHTML = `Mostrando <b>${visibleCount}</b> de ${totalVisitCount} atendimentos`;
     }
   }
 
-  nameInput.addEventListener('input', applyFilters);
+  nameInput.addEventListener('input', () => {
+    // busca por nome sempre volta o filtro de procedimento pra "Todos",
+    // assim o paciente não fica escondido por um chip que ficou selecionado antes
+    if(nameInput.value.trim() && activeProc){
+      activeProc = '';
+      procFiltersEl.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.value === ''));
+    }
+    applyFilters();
+  });
+  dateFromInput.addEventListener('change', applyFilters);
+  dateToInput.addEventListener('change', applyFilters);
+  clearDatesBtn.addEventListener('click', () => {
+    dateFromInput.value = '';
+    dateToInput.value = '';
+    applyFilters();
+  });
   procFiltersEl.addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if(!chip) return;
@@ -828,6 +888,7 @@ function openAddModal(key){
   modalTargetKey = key;
   document.getElementById('modalTitle').textContent = 'Novo atendimento · ' + CLINICS[key].tabLabel;
   document.getElementById('f-vdent-label').textContent = 'Repasse p/ ' + CLINICS[key].repasseTo + ' (R$)';
+  modalOverlay.classList.toggle('accent-oral', key === 'oralcenter');
   modalOverlay.classList.add('open');
   document.getElementById('f-name').value = '';
   document.getElementById('f-proc').value = '';
