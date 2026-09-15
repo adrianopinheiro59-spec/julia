@@ -415,7 +415,19 @@ const CLINICS = {
     billedBy: 'Oral Center',
     repasseTo: 'Dra. Júlia',
     netLabel: 'Oral Center',
-    seed: []
+    seed: [
+{"date":"05/09/2026","name":"Maria de Jesus Machado Oliveira","proc":"restaurações · cód 8914","vclin":1316.70,"vdent":263.34},
+{"date":"05/09/2026","name":"Lucca Bernardo de Almeida Dias","proc":"profilaxia + mantenedor","vclin":773.30,"vdent":154.66},
+{"date":"05/09/2026","name":"Pérola Assis Gonçalves","proc":"emergência - ajuste · cód 8842","vclin":516.20,"vdent":206.48},
+{"date":"05/09/2026","name":"Julio Cesar Isaias dos Santos","proc":"emergência - cimentação","vclin":427.70,"vdent":171.08},
+{"date":"05/09/2026","name":"Rafael Soares Perez","proc":"emergência - pulpectomia · cód 9034","vclin":810.70,"vdent":324.28},
+{"date":"06/09/2026","name":"José Eduardo Prestes Alves","proc":"emergência - cimentação · cód 6397","vclin":410.00,"vdent":164.00},
+{"date":"06/09/2026","name":"Gabrielle Soares Costa","proc":"emergência - consulta · cód 9036","vclin":200.00,"vdent":80.00},
+{"date":"07/09/2026","name":"Bento Kuahara de Oliveira","proc":"emergência - rx · cód 9038","vclin":405.90,"vdent":162.36},
+{"date":"12/09/2026","name":"Maria de Jesus Machado Oliveira","proc":"restaurações · cód 8914","vclin":1316.70,"vdent":263.34},
+{"date":"12/09/2026","name":"Eloah Azevedo Melo","proc":"consulta + selante · cód 9020","vclin":2277.00,"vdent":455.40},
+{"date":"14/09/2026","name":"Leticia Silva Rissato Ribeiro","proc":"consulta + restauração · cód 9043","vclin":1254.00,"vdent":250.80}
+    ]
   }
 };
 
@@ -434,10 +446,11 @@ function normalizeStr(s){
   return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 function normalizeProc(p){
-  const s = p.toLowerCase();
+  const s = normalizeStr(p); // ignora acento/caixa, assim "Emergência" e "emergencia" caem no mesmo filtro
+  if(s.startsWith('emergencia')) return 'emergência';
   if(s.startsWith('consulta')) return 'consulta';
   if(s.startsWith('retorno')) return 'retorno preventivo';
-  if(s.includes('exo') || s.includes('exodontia')) return 'exodontia';
+  if(s.includes('exo')) return 'exodontia';
   if(s.startsWith('rest')) return 'restauração';
   if(s.startsWith('selante')) return 'selante';
   if(s.startsWith('ulectomia')) return 'ulectomia';
@@ -457,13 +470,14 @@ class ClinicState{
   }
   async fetchExtra(){
     try{
-      const res = await fetch(`${SHEETS_API_URL}?clinic=${encodeURIComponent(this.key)}`);
+      const bust = Date.now(); // evita o navegador servir uma resposta antiga em cache
+      const res = await fetch(`${SHEETS_API_URL}?clinic=${encodeURIComponent(this.key)}&t=${bust}`, { cache: 'no-store' });
       if(!res.ok) throw new Error('resposta não ok');
       const data = await res.json();
       this.extraEntries = data
         .filter(e => e.date && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(String(e.date).trim()) && e.name)
         .map(e => ({
-          date: e.date, name: e.name, proc: e.proc,
+          date: e.date, name: e.name, proc: e.proc, codigo: e.codigo || '',
           vclin: e.vclin, vdent: e.vdent,
           _id: e.id, _extra: true
         }));
@@ -669,7 +683,7 @@ function buildClinicPanel(key){
         v.innerHTML = `
           <div class="who">
             <span class="name">${item.name}${isExtra ? '<span class="badge-new">novo</span>' : ''}</span>
-            <span class="proc">${item.proc}</span>
+            <span class="proc">${item.proc}${item.codigo ? ' · cód ' + item.codigo : ''}</span>
           </div>
           <div class="money">
             <div class="vclin">${item.vclin!=null ? brl(item.vclin) : '—'}</div>
@@ -858,9 +872,15 @@ modalOverlay.innerHTML = `
       <label>Nome do paciente</label>
       <input type="text" id="f-name" placeholder="Ex: Maria Silva">
     </div>
-    <div class="field">
-      <label>Procedimento</label>
-      <input type="text" id="f-proc" placeholder="Ex: consulta, retorno prev, rest 16">
+    <div class="field-row">
+      <div class="field">
+        <label>Procedimento</label>
+        <input type="text" id="f-proc" placeholder="Ex: consulta, retorno prev, rest 16">
+      </div>
+      <div class="field" style="max-width:100px;">
+        <label>Código</label>
+        <input type="text" id="f-code" placeholder="9034">
+      </div>
     </div>
     <div class="field-row">
       <div class="field">
@@ -894,6 +914,7 @@ function openAddModal(key){
   modalOverlay.classList.add('open');
   document.getElementById('f-name').value = '';
   document.getElementById('f-proc').value = '';
+  document.getElementById('f-code').value = '';
   document.getElementById('f-vclin').value = '';
   document.getElementById('f-vdent').value = '';
   document.getElementById('f-pct').value = '20';
@@ -925,6 +946,7 @@ document.getElementById('f-proc').addEventListener('input', () => {
 document.getElementById('f-save').addEventListener('click', async () => {
   const name = document.getElementById('f-name').value.trim();
   const proc = document.getElementById('f-proc').value.trim() || 'consulta';
+  const codigo = document.getElementById('f-code').value.trim();
   const vclinRaw = document.getElementById('f-vclin').value;
   const vdentRaw = document.getElementById('f-vdent').value;
   const dateRaw = document.getElementById('f-date').value;
@@ -948,6 +970,7 @@ document.getElementById('f-save').addEventListener('click', async () => {
       date: dateBR,
       name: name,
       proc: proc,
+      codigo: codigo,
       vclin: vclinRaw ? parseFloat(vclinRaw) : null,
       vdent: vdentRaw ? parseFloat(vdentRaw) : 0
     });
@@ -973,11 +996,11 @@ function exportExcelClinic(key){
   }
   const cfg = CLINICS[key];
   const dataset = clinicState[key].raw;
-  const header = ['Data','Paciente','Procedimento','Valor Clínica','Valor Repasse (' + cfg.repasseTo + ')'];
+  const header = ['Data','Paciente','Código','Procedimento','Valor Clínica','Valor Repasse (' + cfg.repasseTo + ')'];
   const rows = dataset.slice().sort((a,b) => toDateObj(a.date) - toDateObj(b.date))
-    .map(r => [r.date, r.name, r.proc, r.vclin!=null ? r.vclin : '', r.vdent!=null ? r.vdent : '']);
+    .map(r => [r.date, r.name, r.codigo || '', r.proc, r.vclin!=null ? r.vclin : '', r.vdent!=null ? r.vdent : '']);
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  ws['!cols'] = [{wch:12},{wch:32},{wch:30},{wch:14},{wch:20}];
+  ws['!cols'] = [{wch:12},{wch:32},{wch:10},{wch:30},{wch:14},{wch:20}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, cfg.tabLabel);
   const today = new Date().toISOString().slice(0,10);
